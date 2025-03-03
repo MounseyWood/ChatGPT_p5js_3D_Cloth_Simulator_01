@@ -1,43 +1,13 @@
-# Creating the updated 3D Cloth Simulation code incorporating the requested enhancements.
-
-updated_code = """<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>3D Cloth Simulation – Enhanced</title>
-    <!-- p5.js library -->
+    <title>3D Cloth Simulation – Fixed</title>
     <script src="https://cdn.jsdelivr.net/npm/p5@1.5.0/lib/p5.min.js"></script>
     <style>
-      body, html {
-        margin: 0;
-        padding: 0;
-        background: #111;
-        color: #fff;
-        font-family: sans-serif;
-        height: 100%;
-      }
-      #uiPanel {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 280px;
-        height: 100%;
-        background: #222;
-        box-shadow: 2px 0 8px rgba(0,0,0,0.5);
-        padding: 20px;
-        box-sizing: border-box;
-        overflow-y: auto;
-      }
-      #canvasContainer {
-        position: absolute;
-        top: 0;
-        left: 280px;
-        width: calc(100% - 280px);
-        height: 100%;
-        overflow: hidden;
-      }
-      h2 { margin-top: 0; }
-      p, label { font-size: 14px; line-height: 1.4em; margin-bottom: 8px; }
+      body, html { margin: 0; padding: 0; background: #111; color: #fff; font-family: sans-serif; height: 100%; }
+      #uiPanel { position: absolute; top: 0; left: 0; width: 280px; height: 100%; background: #222; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+      #canvasContainer { position: absolute; top: 0; left: 280px; width: calc(100% - 280px); height: 100%; }
       .parameter { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #333; }
       .paramHeader { margin-bottom: 4px; font-weight: bold; }
       .paramDesc { font-size: 12px; color: #aaa; margin-top: 4px; }
@@ -83,6 +53,7 @@ updated_code = """<!DOCTYPE html>
       let clothPoints = [], clothConstraints = [];
       let stretchWeftFactor = 1.0, stretchWarpFactor = 1.0, stretchBiasFactor = 1.0;
       let bendWeftFactor = 1.0, bendWarpFactor = 1.0, bendBiasFactor = 1.0;
+      let gravity = 0.5;
       let shadingMode = "default";
 
       function setup() {
@@ -109,45 +80,74 @@ updated_code = """<!DOCTYPE html>
         clothConstraints = [];
         let startX = -((cols - 1) * spacing) / 2;
         let startY = -((rows - 1) * spacing) / 2;
+        
         for (let y = 0; y < rows; y++) {
           for (let x = 0; x < cols; x++) {
             let px = startX + x * spacing;
             let py = startY + y * spacing;
-            clothPoints.push({ x: px, y: py, oldx: px, oldy: py, pinned: y === 0 });
+            let pinned = y === 0; // Pin top row
+            clothPoints.push({ x: px, y: py, oldx: px, oldy: py, pinned });
           }
+        }
+
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            let i = y * cols + x;
+            if (x < cols - 1) clothConstraints.push({ p1: i, p2: i + 1, length: spacing * stretchWeftFactor });
+            if (y < rows - 1) clothConstraints.push({ p1: i, p2: i + cols, length: spacing * stretchWarpFactor });
+            if (x < cols - 1 && y < rows - 1) clothConstraints.push({ p1: i, p2: i + cols + 1, length: spacing * stretchBiasFactor });
+          }
+        }
+      }
+
+      function updateCloth() {
+        for (let p of clothPoints) {
+          if (!p.pinned) {
+            let vx = (p.x - p.oldx) * 0.99;
+            let vy = (p.y - p.oldy) * 0.99 + gravity;
+            p.oldx = p.x;
+            p.oldy = p.y;
+            p.x += vx;
+            p.y += vy;
+          }
+        }
+
+        for (let c of clothConstraints) {
+          let p1 = clothPoints[c.p1];
+          let p2 = clothPoints[c.p2];
+          let dx = p2.x - p1.x;
+          let dy = p2.y - p1.y;
+          let dist = Math.sqrt(dx * dx + dy * dy);
+          let diff = (dist - c.length) / dist * 0.5;
+          dx *= diff;
+          dy *= diff;
+          if (!p1.pinned) { p1.x += dx; p1.y += dy; }
+          if (!p2.pinned) { p2.x -= dx; p2.y -= dy; }
         }
       }
 
       function draw() {
         background(30);
+        updateCloth();
+        
         stroke(255);
-        for (let i = 0; i < clothPoints.length; i++) {
-          let p = clothPoints[i];
+        for (let c of clothConstraints) {
+          let p1 = clothPoints[c.p1];
+          let p2 = clothPoints[c.p2];
+          line(p1.x, p1.y, 0, p2.x, p2.y, 0);
+        }
+
+        noStroke();
+        for (let p of clothPoints) {
           push();
           translate(p.x, p.y, 0);
-          if (shadingMode === "stress") {
-            let stressColor = map(p.y, -spacing * rows / 2, spacing * rows / 2, 255, 100);
-            fill(stressColor, 0, 0);
-          } else if (shadingMode === "structure") {
-            fill(0, 255, 0);
-          } else {
-            fill(200);
-          }
+          if (shadingMode === "stress") fill(map(p.y, -spacing * rows / 2, spacing * rows / 2, 255, 100), 0, 0);
+          else if (shadingMode === "structure") fill(0, 255, 0);
+          else fill(200);
           sphere(2);
           pop();
         }
       }
-
-      function windowResized() {
-        resizeCanvas(windowWidth - 280, windowHeight);
-      }
     </script>
   </body>
-</html>"""
-
-# Save the updated code to a file for the user to download.
-file_path = "/mnt/data/Enhanced_3D_Cloth_Simulation.html"
-with open(file_path, "w") as file:
-    file.write(updated_code)
-
-file_path
+</html>
