@@ -251,7 +251,6 @@
       <div class="parameter">
         <div class="paramHeader">Shading Mode:</div>
         <div class="paramRadio" id="shadingRadioGroup"></div>
-        <!-- CHANGED: removed explanation text here -->
       </div>
 
       <div class="bottomButtons">
@@ -317,7 +316,7 @@
       let windBufOn = false;
       let gravityOn = false;
 
-      // CHANGED: shading modes
+      // Shading modes
       let shadingMode = "off"; // "off", "cloth", "overlaid", "stress", "structure"
 
       /* MODES */
@@ -446,7 +445,7 @@
         attachParamRadio("windBufRadioGroup", (on) => { windBufOn = on; }, "windBufContainer");
         attachParamRadio("gravityRadioGroup", (on) => { gravityOn = on; }, "gravityContainer");
 
-        // CHANGED: shading radio => "off", "cloth", "overlaid", "stress", "structure"
+        // Shading radio => "off", "cloth", "overlaid", "stress", "structure"
         let shadingRadio = createRadio();
         shadingRadio.option("off", "Off");
         shadingRadio.option("cloth", "Cloth");
@@ -1066,9 +1065,8 @@
           pop();
         }
 
-        // CHANGED: Stress shading more sensitive, plus overlaid lines
+        // For stress shading, remove the overlaid white lines/nodes
         if (shadingMode === "off") {
-          // All white
           stroke(255);
           strokeWeight(2);
           noFill();
@@ -1087,7 +1085,6 @@
           }
 
         } else if (shadingMode === "cloth" || shadingMode === "overlaid") {
-          // Cloth fill
           let minY = Infinity, maxY = -Infinity;
           for (let y = 0; y < rows; y++) {
             for (let x = 0; x < cols; x++) {
@@ -1114,7 +1111,6 @@
               endShape(CLOSE);
             }
           }
-          // Overlaid => draw lines + nodes in white
           if (shadingMode === "overlaid") {
             stroke(255);
             strokeWeight(2);
@@ -1135,28 +1131,9 @@
           }
 
         } else if (shadingMode === "stress") {
-          // Heat-map: red = stretched, blue = compressed
-          // Overlaid lines + nodes in white
-          stroke(255);
-          strokeWeight(2);
-          noFill();
-          for (let c of clothConstraints) {
-            let p1 = clothPoints[c.p1];
-            let p2 = clothPoints[c.p2];
-            line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-          }
-          fill(255);
+          // Heat-map only (no overlay lines/nodes)
           noStroke();
-          for (let p of clothPoints) {
-            push();
-            translate(p.x, p.y, p.z);
-            sphere(2);
-            pop();
-          }
-
-          // Then fill each cell with a stronger scale
-          noStroke();
-          let sensitivityFactor = 1.0; // adjust if needed
+          let sensitivityFactor = 1.0;
           for (let y = 0; y < rows - 1; y++) {
             for (let x = 0; x < cols - 1; x++) {
               let idxA = grid[y][x];
@@ -1170,10 +1147,8 @@
               let currArea = computeQuadArea(A, B, C, D);
               let restArea = cellRestArea[y][x];
               let diff = currArea - restArea;
-              // CHANGED: bigger scale => more dramatic colours
-              let maxDelta = restArea * 1.0 * sensitivityFactor; 
+              let maxDelta = restArea * 1.0 * sensitivityFactor;
               let val = constrain(diff, -maxDelta, maxDelta);
-              // 0 => no change, negative => compression => blue, positive => tension => red
               let ratio = map(val, -maxDelta, maxDelta, 0, 1);
               let rCol = lerp(0, 255, ratio);
               let bCol = lerp(255, 0, ratio);
@@ -1195,17 +1170,17 @@
             let p1 = clothPoints[c.p1];
             let p2 = clothPoints[c.p2];
             if (c.type === STRUCTURAL) {
-              stroke(0, 255, 0); // green
+              stroke(0, 255, 0);
             } else if (c.type === SHEAR) {
-              stroke(255, 255, 0); // yellow
+              stroke(255, 255, 0);
             } else if (c.type === BENDING) {
-              stroke(0, 0, 255); // blue
+              stroke(0, 0, 255);
             } else {
               stroke(255);
             }
             line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
           }
-          // CHANGED: nodes are red
+          // Red nodes
           fill(255, 0, 0);
           noStroke();
           for (let p of clothPoints) {
