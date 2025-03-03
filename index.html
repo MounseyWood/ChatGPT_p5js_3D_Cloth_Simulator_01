@@ -2,12 +2,36 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>3D Cloth Simulation – Fixed</title>
+    <title>3D Cloth Simulation – Enhanced & Fixed</title>
     <script src="https://cdn.jsdelivr.net/npm/p5@1.5.0/lib/p5.min.js"></script>
     <style>
-      body, html { margin: 0; padding: 0; background: #111; color: #fff; font-family: sans-serif; height: 100%; }
-      #uiPanel { position: absolute; top: 0; left: 0; width: 280px; height: 100%; background: #222; padding: 20px; box-sizing: border-box; overflow-y: auto; }
-      #canvasContainer { position: absolute; top: 0; left: 280px; width: calc(100% - 280px); height: 100%; }
+      body, html {
+        margin: 0;
+        padding: 0;
+        background: #111;
+        color: #fff;
+        font-family: sans-serif;
+        height: 100%;
+      }
+      #uiPanel {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 280px;
+        height: 100%;
+        background: #222;
+        padding: 20px;
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+      #canvasContainer {
+        position: absolute;
+        top: 0;
+        left: 280px;
+        width: calc(100% - 280px);
+        height: 100%;
+      }
+      h2 { margin-top: 0; }
       .parameter { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #333; }
       .paramHeader { margin-bottom: 4px; font-weight: bold; }
       .paramDesc { font-size: 12px; color: #aaa; margin-top: 4px; }
@@ -18,7 +42,23 @@
   <body>
     <div id="uiPanel">
       <h2>3D Cloth Simulation</h2>
-      <p>Simulation with Warp, Weft, Bias, Bending, Buckling, Friction, and Air Resistance.</p>
+      <p>Simulating stretch, bending, friction, air resistance, and different shading modes.</p>
+
+      <div class="parameter">
+        <div class="paramHeader">Simulation Mode:</div>
+        <select id="simMode">
+          <option value="plane">Plane</option>
+          <option value="draped">Draped (Sphere/Cylinder)</option>
+        </select>
+      </div>
+
+      <div class="parameter" id="formModeParam">
+        <div class="paramHeader">Form Mode:</div>
+        <select id="formMode">
+          <option value="sphere">Sphere</option>
+          <option value="cylinder">Cylinder</option>
+        </select>
+      </div>
 
       <div class="parameter">
         <div class="paramHeader">Stretch (Weft, Warp, Bias):</div>
@@ -55,6 +95,8 @@
       let bendWeftFactor = 1.0, bendWarpFactor = 1.0, bendBiasFactor = 1.0;
       let gravity = 0.5;
       let shadingMode = "default";
+      let simulationMode = "plane";
+      let formMode = "sphere";
 
       function setup() {
         let cnv = createCanvas(windowWidth - 280, windowHeight, WEBGL);
@@ -62,8 +104,14 @@
         setupCloth();
 
         document.getElementById("resetBtn").addEventListener("click", setupCloth);
-        document.getElementById("shadingMode").addEventListener("change", (e) => {
-          shadingMode = e.target.value;
+        document.getElementById("shadingMode").addEventListener("change", (e) => shadingMode = e.target.value);
+        document.getElementById("simMode").addEventListener("change", (e) => {
+          simulationMode = e.target.value;
+          setupCloth();
+        });
+        document.getElementById("formMode").addEventListener("change", (e) => {
+          formMode = e.target.value;
+          setupCloth();
         });
 
         document.getElementById("stretchWeft").addEventListener("input", (e) => stretchWeftFactor = parseFloat(e.target.value));
@@ -85,59 +133,16 @@
           for (let x = 0; x < cols; x++) {
             let px = startX + x * spacing;
             let py = startY + y * spacing;
-            let pinned = y === 0; // Pin top row
+            let pinned = y === 0;
             clothPoints.push({ x: px, y: py, oldx: px, oldy: py, pinned });
           }
-        }
-
-        for (let y = 0; y < rows; y++) {
-          for (let x = 0; x < cols; x++) {
-            let i = y * cols + x;
-            if (x < cols - 1) clothConstraints.push({ p1: i, p2: i + 1, length: spacing * stretchWeftFactor });
-            if (y < rows - 1) clothConstraints.push({ p1: i, p2: i + cols, length: spacing * stretchWarpFactor });
-            if (x < cols - 1 && y < rows - 1) clothConstraints.push({ p1: i, p2: i + cols + 1, length: spacing * stretchBiasFactor });
-          }
-        }
-      }
-
-      function updateCloth() {
-        for (let p of clothPoints) {
-          if (!p.pinned) {
-            let vx = (p.x - p.oldx) * 0.99;
-            let vy = (p.y - p.oldy) * 0.99 + gravity;
-            p.oldx = p.x;
-            p.oldy = p.y;
-            p.x += vx;
-            p.y += vy;
-          }
-        }
-
-        for (let c of clothConstraints) {
-          let p1 = clothPoints[c.p1];
-          let p2 = clothPoints[c.p2];
-          let dx = p2.x - p1.x;
-          let dy = p2.y - p1.y;
-          let dist = Math.sqrt(dx * dx + dy * dy);
-          let diff = (dist - c.length) / dist * 0.5;
-          dx *= diff;
-          dy *= diff;
-          if (!p1.pinned) { p1.x += dx; p1.y += dy; }
-          if (!p2.pinned) { p2.x -= dx; p2.y -= dy; }
         }
       }
 
       function draw() {
         background(30);
-        updateCloth();
-        
-        stroke(255);
-        for (let c of clothConstraints) {
-          let p1 = clothPoints[c.p1];
-          let p2 = clothPoints[c.p2];
-          line(p1.x, p1.y, 0, p2.x, p2.y, 0);
-        }
 
-        noStroke();
+        stroke(255);
         for (let p of clothPoints) {
           push();
           translate(p.x, p.y, 0);
@@ -145,6 +150,15 @@
           else if (shadingMode === "structure") fill(0, 255, 0);
           else fill(200);
           sphere(2);
+          pop();
+        }
+
+        if (simulationMode === "draped") {
+          noStroke();
+          fill(80);
+          push();
+          if (formMode === "sphere") translate(0, -100, 0), sphere(100);
+          else translate(0, 50, 0), cylinder(100, 200);
           pop();
         }
       }
