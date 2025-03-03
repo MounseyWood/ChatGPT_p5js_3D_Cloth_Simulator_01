@@ -251,14 +251,7 @@
       <div class="parameter">
         <div class="paramHeader">Shading Mode:</div>
         <div class="paramRadio" id="shadingRadioGroup"></div>
-        <!-- ADDED updated paramDesc -->
-        <div class="paramDesc">
-          <strong>Off</strong>: all white lines and nodes<br>
-          <strong>Cloth</strong>: grey-scale fill (no lines/nodes)<br>
-          <strong>Overlaid</strong>: cloth fill with white structure over it<br>
-          <strong>Stress</strong>: red=stretched, blue=compressed<br>
-          <strong>Structure</strong>: colour-coded constraint lines
-        </div>
+        <!-- CHANGED: removed explanation text here -->
       </div>
 
       <div class="bottomButtons">
@@ -324,7 +317,7 @@
       let windBufOn = false;
       let gravityOn = false;
 
-      // ADDED: shading modes as requested
+      // CHANGED: shading modes
       let shadingMode = "off"; // "off", "cloth", "overlaid", "stress", "structure"
 
       /* MODES */
@@ -346,13 +339,10 @@
       let dragPointIndex = null;
       let dragPlaneZ = 0;
 
-      // ADDED: For Stress mode, store each cell's original area
+      // For Stress shading, store each cell's rest area
       let cellRestArea = [];
 
-      // ADDED: For Structure mode, track constraint type
-      // "structural", "shear", or "bending"
-      // We'll add a "type" property to each constraint.
-      // Then we colour them differently in "structure" shading.
+      // For Structure shading, track constraint type
       const STRUCTURAL = "structural";
       const SHEAR = "shear";
       const BENDING = "bending";
@@ -456,7 +446,7 @@
         attachParamRadio("windBufRadioGroup", (on) => { windBufOn = on; }, "windBufContainer");
         attachParamRadio("gravityRadioGroup", (on) => { gravityOn = on; }, "gravityContainer");
 
-        // ADDED: shading radio => "off", "cloth", "overlaid", "stress", "structure"
+        // CHANGED: shading radio => "off", "cloth", "overlaid", "stress", "structure"
         let shadingRadio = createRadio();
         shadingRadio.option("off", "Off");
         shadingRadio.option("cloth", "Cloth");
@@ -543,13 +533,12 @@
         horizontal = [];
         vertical = [];
         centers = [];
-        cellRestArea = []; // ADDED for stress mode area storage
+        cellRestArea = [];
 
         let clothWidth = (cols - 1) * spacing;
         let clothHeight = (rows - 1) * spacing;
 
         if (simulationMode === "plane") {
-          // Plane mode
           let startX = -clothWidth/2 + clothShiftX;
           let startY = -clothHeight/2;
           createClothPoints_Plane(startX, startY, 0);
@@ -562,7 +551,7 @@
             let startY = -sphereRadius;
             createClothPoints_Draped(-clothWidth/2, startY, -clothHeight/2);
 
-            // Pin the centre cloth point to the top of the sphere
+            // Pin centre cloth point to top of sphere
             let midRow = Math.floor(rows/2);
             let midCol = Math.floor(cols/2);
             let centerIdx = grid[midRow][midCol];
@@ -578,7 +567,7 @@
             let startY = cylinderTopY;
             createClothPoints_Draped(-clothWidth/2, startY, -clothHeight/2);
 
-            // Pin the centre cloth point at the cylinder's top centre
+            // Pin centre cloth point at cylinder's top centre
             let midRow = Math.floor(rows/2);
             let midCol = Math.floor(cols/2);
             let centerIdx = grid[midRow][midCol];
@@ -592,15 +581,15 @@
           }
         }
 
-        // Override the floor if needed
+        // Override floor if needed
         if (simulationMode === "draped") {
           if (formMode === "sphere") {
-            floorY = 150;  // default floor
+            floorY = 150;
           } else if (formMode === "cylinder") {
-            floorY = cylinderBottomY; // match cylinder bottom
+            floorY = cylinderBottomY;
           }
         } else {
-          floorY = 150; // plane mode default
+          floorY = 150;
         }
 
         createSubPointsAndConstraints();
@@ -635,7 +624,6 @@
       }
 
       function createClothPoints_Draped(startX, fixedY, startZ) {
-        // In Draped mode, create cloth points in the XZ plane with a fixed Y
         for (let rz = 0; rz < rows; rz++) {
           grid[rz] = [];
           for (let cx = 0; cx < cols; cx++) {
@@ -692,10 +680,10 @@
           }
         }
         centers = [];
-        cellRestArea = []; // ADDED
+        cellRestArea = [];
         for (let y = 0; y < rows - 1; y++) {
           centers[y] = [];
-          cellRestArea[y] = []; // ADDED
+          cellRestArea[y] = [];
           for (let x = 0; x < cols - 1; x++) {
             let idxA = grid[y][x];
             let idxB = grid[y][x+1];
@@ -714,8 +702,6 @@
               pinned: false
             });
             centers[y][x] = clothPoints.length - 1;
-
-            // ADDED: store rest area of cell
             let restArea = computeQuadArea(A, B, C, D);
             cellRestArea[y][x] = restArea;
           }
@@ -723,7 +709,6 @@
         createConstraints();
       }
 
-      // ADDED: helper to compute area of a quad via two triangles
       function computeQuadArea(A, B, C, D) {
         let area1 = triArea(A, B, C);
         let area2 = triArea(B, C, D);
@@ -736,7 +721,6 @@
         let vx = p3.x - p1.x;
         let vy = p3.y - p1.y;
         let vz = p3.z - p1.z;
-        // cross product magnitude / 2
         let cx = uy * vz - uz * vy;
         let cy = uz * vx - ux * vz;
         let cz = ux * vy - uy * vx;
@@ -744,7 +728,7 @@
       }
 
       function createConstraints() {
-        // Structural (stretch)
+        // Structural
         for (let y = 0; y < rows; y++) {
           for (let x = 0; x < cols; x++) {
             let idx = grid[y][x];
@@ -762,7 +746,7 @@
             }
           }
         }
-        // Bending (two apart)
+        // Bending
         for (let y = 0; y < rows; y++) {
           for (let x = 0; x < cols - 2; x++) {
             addConstraint(grid[y][x], grid[y][x+2],
@@ -779,7 +763,7 @@
             );
           }
         }
-        // Shear (diagonals)
+        // Shear
         for (let y = 0; y < rows - 1; y++) {
           for (let x = 0; x < cols - 1; x++) {
             let idxA = grid[y][x];
@@ -796,7 +780,7 @@
             );
           }
         }
-        // Subdivide each cell into triangles
+        // Subdivide
         for (let y = 0; y < rows - 1; y++) {
           for (let x = 0; x < cols - 1; x++) {
             let A = grid[y][x];
@@ -808,7 +792,6 @@
             let G = vertical[y][x];
             let H = vertical[y][x+1];
             let I = centers[y][x];
-
             addTriConstraints(A, E, I);
             addTriConstraints(A, G, I);
             addTriConstraints(B, E, I);
@@ -830,14 +813,13 @@
         addConstraint(i3, i1, dist3, STRUCTURAL);
       }
 
-      // ADDED "type" param
       function addConstraint(i, j, len, type) {
         let a = min(i, j);
         let b = max(i, j);
         for (let c of clothConstraints) {
           if (c.p1 === a && c.p2 === b) return;
         }
-        clothConstraints.push({ p1: a, p2: b, length: len, type: type });
+        clothConstraints.push({ p1: a, p2: b, length: len, type });
       }
 
       function distBetween(i1, i2) {
@@ -1070,7 +1052,6 @@
             sphere(sphereRadius);
             pop();
           } else {
-            // Cylinder
             push();
             let midY = (cylinderTopY + cylinderBottomY)/2;
             translate(0, midY, 0);
@@ -1085,9 +1066,9 @@
           pop();
         }
 
-        // ADDED: draw cloth based on shadingMode
+        // CHANGED: Stress shading more sensitive, plus overlaid lines
         if (shadingMode === "off") {
-          // All white structure + white nodes
+          // All white
           stroke(255);
           strokeWeight(2);
           noFill();
@@ -1106,8 +1087,7 @@
           }
 
         } else if (shadingMode === "cloth" || shadingMode === "overlaid") {
-          // "Cloth" = grey-scale fill, no lines/nodes
-          // "Overlaid" = cloth fill + lines/nodes in white
+          // Cloth fill
           let minY = Infinity, maxY = -Infinity;
           for (let y = 0; y < rows; y++) {
             for (let x = 0; x < cols; x++) {
@@ -1134,9 +1114,8 @@
               endShape(CLOSE);
             }
           }
-
+          // Overlaid => draw lines + nodes in white
           if (shadingMode === "overlaid") {
-            // Draw white lines + nodes on top
             stroke(255);
             strokeWeight(2);
             noFill();
@@ -1156,9 +1135,28 @@
           }
 
         } else if (shadingMode === "stress") {
-          // Heat-map for stress: red=stretched, blue=compressed
-          // We'll compare each cell's current area to its rest area
+          // Heat-map: red = stretched, blue = compressed
+          // Overlaid lines + nodes in white
+          stroke(255);
+          strokeWeight(2);
+          noFill();
+          for (let c of clothConstraints) {
+            let p1 = clothPoints[c.p1];
+            let p2 = clothPoints[c.p2];
+            line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+          }
+          fill(255);
           noStroke();
+          for (let p of clothPoints) {
+            push();
+            translate(p.x, p.y, p.z);
+            sphere(2);
+            pop();
+          }
+
+          // Then fill each cell with a stronger scale
+          noStroke();
+          let sensitivityFactor = 1.0; // adjust if needed
           for (let y = 0; y < rows - 1; y++) {
             for (let x = 0; x < cols - 1; x++) {
               let idxA = grid[y][x];
@@ -1171,15 +1169,12 @@
               let D = clothPoints[idxD];
               let currArea = computeQuadArea(A, B, C, D);
               let restArea = cellRestArea[y][x];
-              let diff = currArea - restArea; // >0 => stretch, <0 => compress
-              // Map diff to [-something, +something]
-              // We'll pick an approximate scale
-              let maxDelta = restArea * 0.5; // half rest area for extremes
+              let diff = currArea - restArea;
+              // CHANGED: bigger scale => more dramatic colours
+              let maxDelta = restArea * 1.0 * sensitivityFactor; 
               let val = constrain(diff, -maxDelta, maxDelta);
-              // val<0 => compressed => more blue; val>0 => stretched => more red
-              // We'll create a simple mapping
+              // 0 => no change, negative => compression => blue, positive => tension => red
               let ratio = map(val, -maxDelta, maxDelta, 0, 1);
-              // ratio=0 => fully blue, ratio=1 => fully red
               let rCol = lerp(0, 255, ratio);
               let bCol = lerp(255, 0, ratio);
               fill(rCol, 0, bCol);
@@ -1193,7 +1188,7 @@
           }
 
         } else if (shadingMode === "structure") {
-          // Colour-coded constraint lines
+          // Colour-coded lines by constraint type
           noFill();
           strokeWeight(2);
           for (let c of clothConstraints) {
@@ -1206,12 +1201,12 @@
             } else if (c.type === BENDING) {
               stroke(0, 0, 255); // blue
             } else {
-              stroke(255); // fallback
+              stroke(255);
             }
             line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
           }
-          // Show nodes as grey
-          fill(128);
+          // CHANGED: nodes are red
+          fill(255, 0, 0);
           noStroke();
           for (let p of clothPoints) {
             push();
