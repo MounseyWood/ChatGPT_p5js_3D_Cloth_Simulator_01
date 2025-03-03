@@ -58,10 +58,10 @@
         margin-bottom: 4px;
       }
       .paramRadio input[type="radio"] {
-        accent-color: #1e90ff; /* Keep existing style */
+        accent-color: #1e90ff;
       }
       input[type="range"] {
-        accent-color: #1e90ff; /* Keep existing style */
+        accent-color: #1e90ff;
       }
       .paramContainer {
         margin-top: 4px;
@@ -251,7 +251,14 @@
       <div class="parameter">
         <div class="paramHeader">Shading Mode:</div>
         <div class="paramRadio" id="shadingRadioGroup"></div>
-        <div class="paramDesc">Grey-scale fill based on vertical position.</div>
+        <!-- ADDED updated paramDesc -->
+        <div class="paramDesc">
+          <strong>Off</strong>: all white lines and nodes<br>
+          <strong>Cloth</strong>: grey-scale fill (no lines/nodes)<br>
+          <strong>Overlaid</strong>: cloth fill with white structure over it<br>
+          <strong>Stress</strong>: red=stretched, blue=compressed<br>
+          <strong>Structure</strong>: colour-coded constraint lines
+        </div>
       </div>
 
       <div class="bottomButtons">
@@ -317,8 +324,8 @@
       let windBufOn = false;
       let gravityOn = false;
 
-      /* Shading mode: ADDED multiple modes instead of just off/on */
-      let shadingMode = "none"; // "none", "default", "stress", "structure"
+      // ADDED: shading modes as requested
+      let shadingMode = "off"; // "off", "cloth", "overlaid", "stress", "structure"
 
       /* MODES */
       let pinningMode = "top";         // Only for Plane mode
@@ -339,31 +346,16 @@
       let dragPointIndex = null;
       let dragPlaneZ = 0;
 
-      // ADDED for Clo3D-like enhancements:
-      // Warp/Weft/Bias multipliers (behind the scenes).
-      const WARP_RATIO = 1.0;
-      const WEFT_RATIO = 1.0;
-      const BIAS_RATIO = 1.0;
+      // ADDED: For Stress mode, store each cell's original area
+      let cellRestArea = [];
 
-      // Bending multipliers
-      const BEND_WARP_RATIO = 1.0;
-      const BEND_WEFT_RATIO = 1.0;
-      const BEND_BIAS_RATIO = 1.0;
-
-      // Buckling simulation
-      const BUCKLING_THRESHOLD_RATIO = 0.9; // If constraint length < 90% of rest length => buckle
-      const BUCKLING_STIFFNESS = 0.1; // A small offset to simulate wrinkling
-
-      // Additional friction and internal damping
-      const INTERNAL_DAMPING_FACTOR = 0.99; // Additional damping on velocities
-      const COLLISION_FRICTION_FACTOR = 0.5; // For collisions
-
-      // Density & Thickness
-      let density = 1.0;
-      let thickness = 1.0;
-
-      // Drag coefficient for wind/air resistance
-      const DRAG_COEFFICIENT = 0.02;
+      // ADDED: For Structure mode, track constraint type
+      // "structural", "shear", or "bending"
+      // We'll add a "type" property to each constraint.
+      // Then we colour them differently in "structure" shading.
+      const STRUCTURAL = "structural";
+      const SHEAR = "shear";
+      const BENDING = "bending";
 
       function setup() {
         let cnv = createCanvas(windowWidth - 280, windowHeight, WEBGL);
@@ -435,7 +427,6 @@
         // Helper to attach param toggles
         function attachParamRadio(parentId, setFlag, containerId) {
           let r = createRadio();
-          // We'll rename "off" -> "Off", "on" -> "On" in British English
           r.option("off", "Off");
           r.option("on", "On");
           r.elt.name = parentId + "_radio";
@@ -465,20 +456,21 @@
         attachParamRadio("windBufRadioGroup", (on) => { windBufOn = on; }, "windBufContainer");
         attachParamRadio("gravityRadioGroup", (on) => { gravityOn = on; }, "gravityContainer");
 
-        // Shading Mode radio: replaced Off/On with None/Default/Stress/Structure
+        // ADDED: shading radio => "off", "cloth", "overlaid", "stress", "structure"
         let shadingRadio = createRadio();
-        shadingRadio.option("none", "None");
-        shadingRadio.option("default", "Default");
+        shadingRadio.option("off", "Off");
+        shadingRadio.option("cloth", "Cloth");
+        shadingRadio.option("overlaid", "Overlaid");
         shadingRadio.option("stress", "Stress");
         shadingRadio.option("structure", "Structure");
         shadingRadio.elt.name = "shading_radio";
         shadingRadio.parent("shadingRadioGroup");
-        shadingRadio.selected("none");
+        shadingRadio.selected("off");
         shadingRadio.changed(() => {
           shadingMode = shadingRadio.value();
         });
 
-        // Helper: Create slider and label
+        // Helper: Create slider
         function createSliderAndLabel(divId, callback, min, max, val, step) {
           const slider = createSlider(min, max, val, step);
           slider.parent(divId);
@@ -486,7 +478,7 @@
           callback(slider.value());
         }
 
-        // Sliders for each parameter
+        // Sliders
         createSliderAndLabel("dampingSlider", (val) => {
           damping = val;
           select("#dampingVal").html(nf(val, 1, 2));
@@ -551,6 +543,7 @@
         horizontal = [];
         vertical = [];
         centers = [];
+        cellRestArea = []; // ADDED for stress mode area storage
 
         let clothWidth = (cols - 1) * spacing;
         let clothHeight = (rows - 1) * spacing;
@@ -660,7 +653,6 @@
       }
 
       function createSubPointsAndConstraints() {
-        // Horizontal midpoints
         horizontal = [];
         for (let y = 0; y < rows; y++) {
           horizontal[y] = [];
@@ -680,7 +672,6 @@
             horizontal[y][x] = clothPoints.length - 1;
           }
         }
-        // Vertical midpoints
         vertical = [];
         for (let y = 0; y < rows - 1; y++) {
           vertical[y] = [];
@@ -700,10 +691,11 @@
             vertical[y][x] = clothPoints.length - 1;
           }
         }
-        // Cell centres
         centers = [];
+        cellRestArea = []; // ADDED
         for (let y = 0; y < rows - 1; y++) {
           centers[y] = [];
+          cellRestArea[y] = []; // ADDED
           for (let x = 0; x < cols - 1; x++) {
             let idxA = grid[y][x];
             let idxB = grid[y][x+1];
@@ -722,9 +714,33 @@
               pinned: false
             });
             centers[y][x] = clothPoints.length - 1;
+
+            // ADDED: store rest area of cell
+            let restArea = computeQuadArea(A, B, C, D);
+            cellRestArea[y][x] = restArea;
           }
         }
         createConstraints();
+      }
+
+      // ADDED: helper to compute area of a quad via two triangles
+      function computeQuadArea(A, B, C, D) {
+        let area1 = triArea(A, B, C);
+        let area2 = triArea(B, C, D);
+        return area1 + area2;
+      }
+      function triArea(p1, p2, p3) {
+        let ux = p2.x - p1.x;
+        let uy = p2.y - p1.y;
+        let uz = p2.z - p1.z;
+        let vx = p3.x - p1.x;
+        let vy = p3.y - p1.y;
+        let vz = p3.z - p1.z;
+        // cross product magnitude / 2
+        let cx = uy * vz - uz * vy;
+        let cy = uz * vx - ux * vz;
+        let cz = ux * vy - uy * vx;
+        return 0.5 * sqrt(cx*cx + cy*cy + cz*cz);
       }
 
       function createConstraints() {
@@ -732,18 +748,16 @@
         for (let y = 0; y < rows; y++) {
           for (let x = 0; x < cols; x++) {
             let idx = grid[y][x];
-            // Horizontal
             if (x < cols - 1) {
-              // ADDED warp/weft ratio usage: horizontal => weft
               addConstraint(idx, grid[y][x+1],
-                spacing * (stretchOn ? (stretchFactor * WEFT_RATIO) : BASE_STRETCH)
+                spacing * (stretchOn ? stretchFactor : BASE_STRETCH),
+                STRUCTURAL
               );
             }
-            // Vertical
             if (y < rows - 1) {
-              // ADDED warp/weft ratio usage: vertical => warp
               addConstraint(idx, grid[y+1][x],
-                spacing * (stretchOn ? (stretchFactor * WARP_RATIO) : BASE_STRETCH)
+                spacing * (stretchOn ? stretchFactor : BASE_STRETCH),
+                STRUCTURAL
               );
             }
           }
@@ -752,14 +766,16 @@
         for (let y = 0; y < rows; y++) {
           for (let x = 0; x < cols - 2; x++) {
             addConstraint(grid[y][x], grid[y][x+2],
-              spacing * 2 * (bendingOn ? (bendingFactor * BEND_WEFT_RATIO) : BASE_BENDING)
+              spacing * 2 * (bendingOn ? bendingFactor : BASE_BENDING),
+              BENDING
             );
           }
         }
         for (let y = 0; y < rows - 2; y++) {
           for (let x = 0; x < cols; x++) {
             addConstraint(grid[y][x], grid[y+2][x],
-              spacing * 2 * (bendingOn ? (bendingFactor * BEND_WARP_RATIO) : BASE_BENDING)
+              spacing * 2 * (bendingOn ? bendingFactor : BASE_BENDING),
+              BENDING
             );
           }
         }
@@ -770,12 +786,13 @@
             let idxB = grid[y][x+1];
             let idxC = grid[y+1][x];
             let idxD = grid[y+1][x+1];
-            // ADDED warp/weft/bias usage: diagonals => bias
             addConstraint(idxA, idxD,
-              sqrt(2) * spacing * (shearOn ? (shearFactor * BIAS_RATIO) : BASE_SHEAR)
+              sqrt(2) * spacing * (shearOn ? shearFactor : BASE_SHEAR),
+              SHEAR
             );
             addConstraint(idxB, idxC,
-              sqrt(2) * spacing * (shearOn ? (shearFactor * BIAS_RATIO) : BASE_SHEAR)
+              sqrt(2) * spacing * (shearOn ? shearFactor : BASE_SHEAR),
+              SHEAR
             );
           }
         }
@@ -792,7 +809,6 @@
             let H = vertical[y][x+1];
             let I = centers[y][x];
 
-            // Each triangle
             addTriConstraints(A, E, I);
             addTriConstraints(A, G, I);
             addTriConstraints(B, E, I);
@@ -809,18 +825,19 @@
         let dist1 = distBetween(i1, i2);
         let dist2 = distBetween(i2, i3);
         let dist3 = distBetween(i3, i1);
-        addConstraint(i1, i2, dist1);
-        addConstraint(i2, i3, dist2);
-        addConstraint(i3, i1, dist3);
+        addConstraint(i1, i2, dist1, STRUCTURAL);
+        addConstraint(i2, i3, dist2, STRUCTURAL);
+        addConstraint(i3, i1, dist3, STRUCTURAL);
       }
 
-      function addConstraint(i, j, len) {
+      // ADDED "type" param
+      function addConstraint(i, j, len, type) {
         let a = min(i, j);
         let b = max(i, j);
         for (let c of clothConstraints) {
           if (c.p1 === a && c.p2 === b) return;
         }
-        clothConstraints.push({ p1: a, p2: b, length: len });
+        clothConstraints.push({ p1: a, p2: b, length: len, type: type });
       }
 
       function distBetween(i1, i2) {
@@ -836,31 +853,20 @@
         let freq = 0.01;
         for (let p of clothPoints) {
           if (!p.pinned) {
-            // ADDED internal damping
-            let vx = (p.x - p.oldx) * damping * INTERNAL_DAMPING_FACTOR;
-            let vy = (p.y - p.oldy) * damping * INTERNAL_DAMPING_FACTOR;
-            let vz = (p.z - p.oldz) * damping * INTERNAL_DAMPING_FACTOR;
+            let vx = (p.x - p.oldx) * (dampingOn ? damping : BASE_DAMPING);
+            let vy = (p.y - p.oldy) * (dampingOn ? damping : BASE_DAMPING);
+            let vz = (p.z - p.oldz) * (dampingOn ? damping : BASE_DAMPING);
             p.oldx = p.x;
             p.oldy = p.y;
             p.oldz = p.z;
 
             let sinVal = sin(frameCount * freq);
-
-            // Effective wind
             let effectiveWindX = windXOn ? windBuffer * windX * sinVal : BASE_WINDX;
             let effectiveWindY = windYOn ? windBuffer * windY * sinVal : BASE_WINDY;
             let effectiveWindZ = windZOn ? windBuffer * windZ * sinVal : BASE_WINDZ;
 
-            vx *= (dampingOn ? damping : BASE_DAMPING);
-            vy *= (dampingOn ? damping : BASE_DAMPING);
-            vz *= (dampingOn ? damping : BASE_DAMPING);
-
             let effGrav = gravityOn ? gravity : BASE_GRAVITY;
-            let effWeight = weightOn ? weight * density : BASE_WEIGHT; // ADDED density
-            // ADDED drag (air resistance)
-            vx -= vx * DRAG_COEFFICIENT;
-            vy -= vy * DRAG_COEFFICIENT;
-            vz -= vz * DRAG_COEFFICIENT;
+            let effWeight = weightOn ? weight : BASE_WEIGHT;
 
             p.x += vx + effectiveWindX;
             p.y += vy + effGrav * effWeight + effectiveWindY;
@@ -877,25 +883,6 @@
             let dy = p2.y - p1.y;
             let dz = p2.z - p1.z;
             let distVal = sqrt(dx*dx + dy*dy + dz*dz);
-
-            // ADDED buckling check
-            if (distVal < c.length * BUCKLING_THRESHOLD_RATIO) {
-              // Simulate small wrinkling offset
-              let midx = (p1.x + p2.x) * 0.5;
-              let midy = (p1.y + p2.y) * 0.5;
-              let midz = (p1.z + p2.z) * 0.5;
-              if (!p1.pinned) {
-                p1.x += (p1.x - midx) * BUCKLING_STIFFNESS;
-                p1.y += (p1.y - midy) * BUCKLING_STIFFNESS;
-                p1.z += (p1.z - midz) * BUCKLING_STIFFNESS;
-              }
-              if (!p2.pinned) {
-                p2.x += (p2.x - midx) * BUCKLING_STIFFNESS;
-                p2.y += (p2.y - midy) * BUCKLING_STIFFNESS;
-                p2.z += (p2.z - midz) * BUCKLING_STIFFNESS;
-              }
-            }
-
             let diff = (distVal - c.length) / distVal;
             let offsetX = dx * 0.5 * diff;
             let offsetY = dy * 0.5 * diff;
@@ -925,7 +912,7 @@
       }
 
       function doSelfCollision() {
-        let threshold = spacing * 0.5 * thickness; // ADDED thickness
+        let threshold = spacing * 0.5;
         for (let i = 0; i < clothPoints.length; i++) {
           for (let j = i + 1; j < clothPoints.length; j++) {
             let p1 = clothPoints[i];
@@ -936,25 +923,18 @@
             let d = sqrt(dx*dx + dy*dy + dz*dz);
             if (d < threshold && d > 0) {
               let overlap = threshold - d;
-              // We'll do a 3D approach with normal vector
-              let nx = dx / d;
-              let ny = dy / d;
-              let nz = dz / d;
+              let angle = atan2(dy, dx);
               if (!p1.pinned && !p2.pinned) {
-                p1.x -= nx * overlap * 0.5;
-                p1.y -= ny * overlap * 0.5;
-                p1.z -= nz * overlap * 0.5;
-                p2.x += nx * overlap * 0.5;
-                p2.y += ny * overlap * 0.5;
-                p2.z += nz * overlap * 0.5;
+                p1.x -= cos(angle)*overlap*0.5;
+                p1.y -= sin(angle)*overlap*0.5;
+                p2.x += cos(angle)*overlap*0.5;
+                p2.y += sin(angle)*overlap*0.5;
               } else if (!p1.pinned && p2.pinned) {
-                p1.x -= nx * overlap;
-                p1.y -= ny * overlap;
-                p1.z -= nz * overlap;
+                p1.x -= cos(angle)*overlap;
+                p1.y -= sin(angle)*overlap;
               } else if (p1.pinned && !p2.pinned) {
-                p2.x += nx * overlap;
-                p2.y += ny * overlap;
-                p2.z += nz * overlap;
+                p2.x += cos(angle)*overlap;
+                p2.y += sin(angle)*overlap;
               }
             }
           }
@@ -962,43 +942,43 @@
       }
 
       function doSphereCollision() {
+        const collisionFriction = 0.5;
         for (let p of clothPoints) {
           if (!p.pinned) {
             let dx = p.x - sphereCentre.x;
             let dy = p.y - sphereCentre.y;
             let dz = p.z - sphereCentre.z;
             let distVal = sqrt(dx*dx + dy*dy + dz*dz);
-            if (distVal < sphereRadius + thickness) {
-              let overlap = (sphereRadius + thickness) - distVal;
+            if (distVal < sphereRadius) {
+              let overlap = sphereRadius - distVal;
               let nx = dx / distVal;
               let ny = dy / distVal;
               let nz = dz / distVal;
               p.x += nx * overlap;
               p.y += ny * overlap;
               p.z += nz * overlap;
-              // friction
-              p.oldx = p.x - COLLISION_FRICTION_FACTOR * (p.x - p.oldx);
-              p.oldy = p.y - COLLISION_FRICTION_FACTOR * (p.y - p.oldy);
-              p.oldz = p.z - COLLISION_FRICTION_FACTOR * (p.z - p.oldz);
+              p.oldx = p.x - collisionFriction * (p.x - p.oldx);
+              p.oldy = p.y - collisionFriction * (p.y - p.oldy);
+              p.oldz = p.z - collisionFriction * (p.z - p.oldz);
             }
           }
         }
       }
 
       function doCylinderCollision() {
+        const collisionFriction = 0.5;
         for (let p of clothPoints) {
           if (!p.pinned) {
             if (p.y > cylinderTopY && p.y < cylinderBottomY) {
               let r = sqrt(p.x*p.x + p.z*p.z);
-              if (r < cylRadius + thickness) {
-                let overlap = (cylRadius + thickness) - r;
+              if (r < cylRadius) {
+                let overlap = cylRadius - r;
                 let nx = p.x / r;
                 let nz = p.z / r;
                 p.x += nx * overlap;
                 p.z += nz * overlap;
-                // friction
-                p.oldx = p.x - COLLISION_FRICTION_FACTOR * (p.x - p.oldx);
-                p.oldz = p.z - COLLISION_FRICTION_FACTOR * (p.z - p.oldz);
+                p.oldx = p.x - collisionFriction * (p.x - p.oldx);
+                p.oldz = p.z - collisionFriction * (p.z - p.oldz);
               }
             }
           }
@@ -1006,10 +986,11 @@
       }
 
       function doFloorCollision() {
+        const collisionFriction = 0.5;
         for (let p of clothPoints) {
-          if (!p.pinned && p.y > floorY - thickness) {
-            p.y = floorY - thickness;
-            p.oldy = p.y - COLLISION_FRICTION_FACTOR * (p.y - p.oldy);
+          if (!p.pinned && p.y > floorY) {
+            p.y = floorY;
+            p.oldy = p.y - collisionFriction * (p.y - p.oldy);
           }
         }
       }
@@ -1104,9 +1085,29 @@
           pop();
         }
 
-        // Shading
-        if (shadingMode === "default") {
-          // Original grey-scale shading
+        // ADDED: draw cloth based on shadingMode
+        if (shadingMode === "off") {
+          // All white structure + white nodes
+          stroke(255);
+          strokeWeight(2);
+          noFill();
+          for (let c of clothConstraints) {
+            let p1 = clothPoints[c.p1];
+            let p2 = clothPoints[c.p2];
+            line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+          }
+          fill(255);
+          noStroke();
+          for (let p of clothPoints) {
+            push();
+            translate(p.x, p.y, p.z);
+            sphere(2);
+            pop();
+          }
+
+        } else if (shadingMode === "cloth" || shadingMode === "overlaid") {
+          // "Cloth" = grey-scale fill, no lines/nodes
+          // "Overlaid" = cloth fill + lines/nodes in white
           let minY = Infinity, maxY = -Infinity;
           for (let y = 0; y < rows; y++) {
             for (let x = 0; x < cols; x++) {
@@ -1133,23 +1134,55 @@
               endShape(CLOSE);
             }
           }
-        } else if (shadingMode === "stress") {
-          // Simple stress map: red if lower, lighter if higher
-          noStroke();
-          let minY = Infinity, maxY = -Infinity;
-          for (let pt of clothPoints) {
-            if (pt.y < minY) minY = pt.y;
-            if (pt.y > maxY) maxY = pt.y;
+
+          if (shadingMode === "overlaid") {
+            // Draw white lines + nodes on top
+            stroke(255);
+            strokeWeight(2);
+            noFill();
+            for (let c of clothConstraints) {
+              let p1 = clothPoints[c.p1];
+              let p2 = clothPoints[c.p2];
+              line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+            }
+            fill(255);
+            noStroke();
+            for (let p of clothPoints) {
+              push();
+              translate(p.x, p.y, p.z);
+              sphere(2);
+              pop();
+            }
           }
+
+        } else if (shadingMode === "stress") {
+          // Heat-map for stress: red=stretched, blue=compressed
+          // We'll compare each cell's current area to its rest area
+          noStroke();
           for (let y = 0; y < rows - 1; y++) {
             for (let x = 0; x < cols - 1; x++) {
-              let A = clothPoints[grid[y][x]];
-              let B = clothPoints[grid[y][x+1]];
-              let C = clothPoints[grid[y+1][x+1]];
-              let D = clothPoints[grid[y+1][x]];
-              let avgY = (A.y+B.y+C.y+D.y)*0.25;
-              let cval = map(avgY, minY, maxY, 255, 100);
-              fill(cval, 0, 0);
+              let idxA = grid[y][x];
+              let idxB = grid[y][x+1];
+              let idxC = grid[y+1][x];
+              let idxD = grid[y+1][x+1];
+              let A = clothPoints[idxA];
+              let B = clothPoints[idxB];
+              let C = clothPoints[idxC];
+              let D = clothPoints[idxD];
+              let currArea = computeQuadArea(A, B, C, D);
+              let restArea = cellRestArea[y][x];
+              let diff = currArea - restArea; // >0 => stretch, <0 => compress
+              // Map diff to [-something, +something]
+              // We'll pick an approximate scale
+              let maxDelta = restArea * 0.5; // half rest area for extremes
+              let val = constrain(diff, -maxDelta, maxDelta);
+              // val<0 => compressed => more blue; val>0 => stretched => more red
+              // We'll create a simple mapping
+              let ratio = map(val, -maxDelta, maxDelta, 0, 1);
+              // ratio=0 => fully blue, ratio=1 => fully red
+              let rCol = lerp(0, 255, ratio);
+              let bCol = lerp(255, 0, ratio);
+              fill(rCol, 0, bCol);
               beginShape();
               vertex(A.x, A.y, A.z);
               vertex(B.x, B.y, B.z);
@@ -1158,32 +1191,28 @@
               endShape(CLOSE);
             }
           }
-        } else if (shadingMode === "structure") {
-          // Structure: draw triangle mesh in green
-          stroke(0, 255, 0);
-          strokeWeight(2);
-          noFill();
-          for (let c of clothConstraints) {
-            let p1 = clothPoints[c.p1];
-            let p2 = clothPoints[c.p2];
-            line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-          }
-        } else {
-          // shadingMode === "none"
-          // No fill shading, just show constraints as lines
-          stroke(255);
-          strokeWeight(2);
-          for (let c of clothConstraints) {
-            let p1 = clothPoints[c.p1];
-            let p2 = clothPoints[c.p2];
-            line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
-          }
-        }
 
-        // Draw cloth points as small spheres if not using structure shading
-        if (shadingMode !== "structure") {
+        } else if (shadingMode === "structure") {
+          // Colour-coded constraint lines
+          noFill();
+          strokeWeight(2);
+          for (let c of clothConstraints) {
+            let p1 = clothPoints[c.p1];
+            let p2 = clothPoints[c.p2];
+            if (c.type === STRUCTURAL) {
+              stroke(0, 255, 0); // green
+            } else if (c.type === SHEAR) {
+              stroke(255, 255, 0); // yellow
+            } else if (c.type === BENDING) {
+              stroke(0, 0, 255); // blue
+            } else {
+              stroke(255); // fallback
+            }
+            line(p1.x, p1.y, p1.z, p2.x, p2.y, p2.z);
+          }
+          // Show nodes as grey
+          fill(128);
           noStroke();
-          fill("#FF0000");
           for (let p of clothPoints) {
             push();
             translate(p.x, p.y, p.z);
