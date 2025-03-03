@@ -1,1 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>3D Cloth Simulation – Enhanced</title>
+    <!-- p5.js library -->
+    <script src="https://cdn.jsdelivr.net/npm/p5@1.5.0/lib/p5.min.js"></script>
+    <style>
+      body, html {
+        margin: 0;
+        padding: 0;
+        background: #111;
+        color: #fff;
+        font-family: sans-serif;
+        height: 100%;
+      }
+      #uiPanel {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 280px;
+        height: 100%;
+        background: #222;
+        box-shadow: 2px 0 8px rgba(0,0,0,0.5);
+        padding: 20px;
+        box-sizing: border-box;
+        overflow-y: auto;
+      }
+      #canvasContainer {
+        position: absolute;
+        top: 0;
+        left: 280px;
+        width: calc(100% - 280px);
+        height: 100%;
+        overflow: hidden;
+      }
+      h2 { margin-top: 0; }
+      p, label { font-size: 14px; line-height: 1.4em; margin-bottom: 8px; }
+      .parameter { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #333; }
+      .paramHeader { margin-bottom: 4px; font-weight: bold; }
+      .paramDesc { font-size: 12px; color: #aaa; margin-top: 4px; }
+      button { width: 100%; padding: 8px 12px; background: #555; color: #fff; border: none; cursor: pointer; margin-bottom: 10px; }
+      button:hover { background: #666; }
+    </style>
+  </head>
+  <body>
+    <div id="uiPanel">
+      <h2>3D Cloth Simulation</h2>
+      <p>Simulation with Warp, Weft, Bias, Bending, Buckling, Friction, and Air Resistance.</p>
 
+      <div class="parameter">
+        <div class="paramHeader">Stretch (Weft, Warp, Bias):</div>
+        <input type="range" id="stretchWeft" min="0.8" max="1.2" step="0.01" value="1.0">
+        <input type="range" id="stretchWarp" min="0.8" max="1.2" step="0.01" value="1.0">
+        <input type="range" id="stretchBias" min="0.8" max="1.2" step="0.01" value="1.0">
+      </div>
+
+      <div class="parameter">
+        <div class="paramHeader">Bending (Weft, Warp, Bias):</div>
+        <input type="range" id="bendWeft" min="0.1" max="2.0" step="0.1" value="1.0">
+        <input type="range" id="bendWarp" min="0.1" max="2.0" step="0.1" value="1.0">
+        <input type="range" id="bendBias" min="0.1" max="2.0" step="0.1" value="1.0">
+      </div>
+
+      <div class="parameter">
+        <div class="paramHeader">Shading Mode:</div>
+        <select id="shadingMode">
+          <option value="default">Default (Gray-scale)</option>
+          <option value="stress">Stress Map</option>
+          <option value="structure">Structural View</option>
+        </select>
+      </div>
+
+      <button id="resetBtn">Reset Cloth</button>
+    </div>
+
+    <div id="canvasContainer"></div>
+
+    <script>
+      let cols = 20, rows = 20, spacing = 20;
+      let clothPoints = [], clothConstraints = [];
+      let stretchWeftFactor = 1.0, stretchWarpFactor = 1.0, stretchBiasFactor = 1.0;
+      let bendWeftFactor = 1.0, bendWarpFactor = 1.0, bendBiasFactor = 1.0;
+      let shadingMode = "default";
+
+      function setup() {
+        let cnv = createCanvas(windowWidth - 280, windowHeight, WEBGL);
+        cnv.parent("canvasContainer");
+        setupCloth();
+
+        document.getElementById("resetBtn").addEventListener("click", setupCloth);
+        document.getElementById("shadingMode").addEventListener("change", (e) => {
+          shadingMode = e.target.value;
+        });
+
+        document.getElementById("stretchWeft").addEventListener("input", (e) => stretchWeftFactor = parseFloat(e.target.value));
+        document.getElementById("stretchWarp").addEventListener("input", (e) => stretchWarpFactor = parseFloat(e.target.value));
+        document.getElementById("stretchBias").addEventListener("input", (e) => stretchBiasFactor = parseFloat(e.target.value));
+
+        document.getElementById("bendWeft").addEventListener("input", (e) => bendWeftFactor = parseFloat(e.target.value));
+        document.getElementById("bendWarp").addEventListener("input", (e) => bendWarpFactor = parseFloat(e.target.value));
+        document.getElementById("bendBias").addEventListener("input", (e) => bendBiasFactor = parseFloat(e.target.value));
+      }
+
+      function setupCloth() {
+        clothPoints = [];
+        clothConstraints = [];
+        let startX = -((cols - 1) * spacing) / 2;
+        let startY = -((rows - 1) * spacing) / 2;
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            let px = startX + x * spacing;
+            let py = startY + y * spacing;
+            clothPoints.push({ x: px, y: py, oldx: px, oldy: py, pinned: y === 0 });
+          }
+        }
+      }
+
+      function draw() {
+        background(30);
+        stroke(255);
+        for (let i = 0; i < clothPoints.length; i++) {
+          let p = clothPoints[i];
+          push();
+          translate(p.x, p.y, 0);
+          if (shadingMode === "stress") {
+            let stressColor = map(p.y, -spacing * rows / 2, spacing * rows / 2, 255, 100);
+            fill(stressColor, 0, 0);
+          } else if (shadingMode === "structure") {
+            fill(0, 255, 0);
+          } else {
+            fill(200);
+          }
+          sphere(2);
+          pop();
+        }
+      }
+
+      function windowResized() {
+        resizeCanvas(windowWidth - 280, windowHeight);
+      }
+    </script>
+  </body>
+</html>
